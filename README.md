@@ -1,2 +1,2 @@
 # tinyLas
-a library for las file format read\ very simple to build and run
+a very simple tool for las data view

@@ -111,7 +111,6 @@ pub fn make_matrix(x: f32, y: f32, z: f32) -> Matrix4<f32> {
     // Combine everything.
     return projection.as_matrix() * mat_model_view;
 
-    //println!("matrix is {:?}", model_view_projection.as_slice());
 }
 
 fn apply_matrix(matrix: &Matrix4<f32>, transf: &mut Transform) {
@@ -125,7 +124,7 @@ fn apply_matrix(matrix: &Matrix4<f32>, transf: &mut Transform) {
 pub fn main() {
     let mut events_loop = glutin::EventsLoop::new();
     let windowbuilder = glutin::WindowBuilder::new()
-        .with_title("Point Cloud".to_string())
+        .with_title("Las Viewer".to_string())
         .with_dimensions(800, 600);
     let contextbuilder = glutin::ContextBuilder::new()
         .with_gl(GlRequest::Specific(OpenGl,(3,2)))

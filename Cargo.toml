@@ -1,12 +1,11 @@
 [package]
-name = "simple"
+name = "LasViewer"
 version = "0.1.0"
-authors = ["fanzhenhua <fanzhenhua@superengine.com.cn>"]
+authors = [""]
 
 [dependencies]
 las = "0.6"
 gfx = "0.17"
 glutin = "0.12"
 gfx_window_glutin = "0.20"
-#matrix = "0.22"
 nalgebra = "0.16"

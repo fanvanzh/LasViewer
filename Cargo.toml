@@ -6,6 +6,6 @@ authors = [""]
 [dependencies]
 las = "0.6"
 gfx = "0.17"
-glutin = "0.12"
-gfx_window_glutin = "0.20"
+glutin = "0.19"
+gfx_window_glutin = "0.28"
 nalgebra = "0.16"

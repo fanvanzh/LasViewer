@@ -11,6 +11,7 @@ use gfx_window_glutin as gfx_glutin;
 use gfx::state::*;
 use glutin::{GlContext, GlRequest};
 use glutin::Api::OpenGl;
+use glutin::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use las::Reader;
 use na::{Isometry3, Perspective3, Point3, Vector3, Matrix4};
 
@@ -35,7 +36,7 @@ gfx_defines!{
     }
 }
 
-const vs: &str = r#"
+const VS: &str = r#"
 #version 150 core
 
 in vec3 a_Pos;
@@ -53,7 +54,7 @@ void main() {
 }
 "#;
 
-const fs: &str = r#"
+const FS: &str = r#"
 #version 150 core
 
 in vec4 v_Color;
@@ -95,7 +96,7 @@ pub fn make_matrix(x: f32, y: f32, z: f32) -> Matrix4<f32> {
     let model = Isometry3::new(Vector3::x(), na::zero());
     // Our camera looks toward the point (1.0, 0.0, 0.0).
     // It is located at (0.0, 0.0, 1.0).
-    let eye = Point3::new(x, y, z - 20.0);
+    let eye = Point3::new(x, y, z + 50.0);
     let target = Point3::new(x, y, z);
     let view = Isometry3::look_at_rh(&eye, &target, &Vector3::y());
 
@@ -124,17 +125,17 @@ fn apply_matrix(matrix: &Matrix4<f32>, transf: &mut Transform) {
 pub fn main() {
     let mut events_loop = glutin::EventsLoop::new();
     let windowbuilder = glutin::WindowBuilder::new()
-        .with_title("Las Viewer".to_string())
-        .with_dimensions(800, 600);
+        .with_title("LasViewer".to_string())
+        .with_dimensions((800, 600).into());
     let contextbuilder = glutin::ContextBuilder::new()
         .with_gl(GlRequest::Specific(OpenGl,(3,2)))
         .with_vsync(true);
-    let (window, mut device, mut factory, mut color_view, mut depth_view) =
-        gfx_glutin::init::<ColorFormat, DepthFormat>(windowbuilder, contextbuilder, &events_loop);
+    let (window, mut device, mut factory, color_view, mut depth_view) =
+        gfx_glutin::init::<ColorFormat, DepthFormat>(windowbuilder, contextbuilder, &events_loop).unwrap();
 
     let program = factory.link_program(
-        vs.as_bytes(),
-        fs.as_bytes() ).unwrap();
+        VS.as_bytes(),
+        FS.as_bytes() ).unwrap();
     let raster = Rasterizer {
         front_face: FrontFace::Clockwise,
         cull_face: CullFace::Nothing,
@@ -152,6 +153,7 @@ pub fn main() {
     let mut point_cloud: Vec<Vertex> = Vec::new();
     let mut reader = Reader::from_path(r#"E:\Data\Tile_1\Tile_1.las"#).unwrap();    
     for wrapped_point in reader.points()
+        .take(102400 * 3)
     {
         let point = wrapped_point.unwrap();
         if let Some(color) = point.color {
@@ -166,7 +168,7 @@ pub fn main() {
         bbox.extend(pt.pos[0],pt.pos[1],pt.pos[2])
     }
     let matrix = make_matrix( 
-        (bbox.minx + bbox.maxx) / 2.0, 
+        (bbox.minx + bbox.maxx) / 2.0  + 30.0, 
         (bbox.miny + bbox.maxy) / 2.0, 
         (bbox.minz + bbox.maxz) / 2.0
         );
@@ -176,7 +178,7 @@ pub fn main() {
 
     let (vertex_buffer, slice) = factory.create_vertex_buffer_with_slice(point_cloud.as_slice(), ());
     let transform_buffer = factory.create_constant_buffer(1);
-    let data = pipe::Data {
+    let mut data = pipe::Data {
         vbuf: vertex_buffer,
         transform: transform_buffer,
         out: color_view.clone(),
@@ -184,25 +186,28 @@ pub fn main() {
     let mut running = true;
     while running { 
         events_loop.poll_events(|event| {
-            if let glutin::Event::WindowEvent { event, .. } = event {
+            if let Event::WindowEvent { event, .. } = event {
                 match event {
-                    glutin::WindowEvent::Closed |
-                    glutin::WindowEvent::KeyboardInput {
-                        input: glutin::KeyboardInput {
-                            virtual_keycode: Some(glutin::VirtualKeyCode::Escape), ..
-                        }, ..
+                    WindowEvent::CloseRequested |
+                    WindowEvent::KeyboardInput {
+                        input: KeyboardInput {
+                            virtual_keycode: Some(VirtualKeyCode::Escape),
+                            ..
+                        },
+                        ..
                     } => running = false,
-                    glutin::WindowEvent::Resized(_, _) => {
-                        gfx_glutin::update_views(&window, &mut color_view, &mut depth_view);
+                    WindowEvent::Resized(size) => {
+                        window.resize(size.to_physical(window.get_hidpi_factor()));
+                        gfx_window_glutin::update_views(&window, &mut data.out, &mut depth_view);
                     },
-                    _ => {}
+                    _ => (),
                 }
             }
         });
 
         // Put in main loop before swap buffers and device clean-up method
         encoder.clear(&color_view, BLACK); //clear the framebuffer with a color(color needs to be an array of 4 f32s, RGBa)
-        encoder.update_buffer(&data.transform, &[transf], 0); //update buffers
+        encoder.update_buffer(&data.transform, &[transf], 0).unwrap(); //update buffers
         encoder.draw(&slice, &pso, &data); // draw commands with buffer data and attached pso
         encoder.flush(&mut device); // execute draw commands
         window.swap_buffers().unwrap();

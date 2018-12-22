@@ -3,17 +3,26 @@ extern crate gfx;
 extern crate gfx_window_glutin;
 extern crate glutin;
 extern crate las;
-extern crate nalgebra as na;
+extern crate cgmath;
+extern crate clap;
+#[macro_use]
+extern crate log;
+extern crate chrono;
+extern crate env_logger;
 
 use gfx::traits::FactoryExt;
 use gfx::Device;
 use gfx_window_glutin as gfx_glutin;
 use gfx::state::*;
-use glutin::{GlContext, GlRequest};
+use glutin::{GlRequest};
 use glutin::Api::OpenGl;
 use glutin::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use las::Reader;
-use na::{Isometry3, Perspective3, Point3, Vector3, Matrix4};
+//use cgmath::prelude::*;
+use cgmath::{Point3, Vector3, Matrix4};
+use clap::{Arg, App};
+use chrono::prelude::*;
+use log::{Level, LevelFilter};
 
 pub type ColorFormat = gfx::format::Srgba8;
 pub type DepthFormat = gfx::format::DepthStencil;
@@ -90,39 +99,114 @@ impl Bbox {
         if y < self.miny { self.miny = y; } else { self.maxy = y; }
         if z < self.minz { self.minz = z; } else { self.maxz = z; }
     }
-}
 
-pub fn make_matrix(x: f32, y: f32, z: f32) -> Matrix4<f32> {
-    let model = Isometry3::new(Vector3::x(), na::zero());
-    // Our camera looks toward the point (1.0, 0.0, 0.0).
-    // It is located at (0.0, 0.0, 1.0).
-    let eye = Point3::new(x, y, z + 50.0);
-    let target = Point3::new(x, y, z);
-    let view = Isometry3::look_at_rh(&eye, &target, &Vector3::y());
-
-    // A perspective projection.
-    let projection = Perspective3::new(16.0 / 9.0, 3.14 / 2.0, 1.0, 1000.0);
-
-    // The combination of the model with the view is still an isometry.
-    let model_view = view * model;
-
-    // Convert everything to a `Matrix4` so that they can be combined.
-    let mat_model_view = model_view.to_homogeneous();
-
-    // Combine everything.
-    return projection.as_matrix() * mat_model_view;
-
-}
-
-fn apply_matrix(matrix: &Matrix4<f32>, transf: &mut Transform) {
-    for i in 0..16 {
-        let c = i / 4;
-        let l = i % 4;
-        transf.transform[l][c] = matrix.as_slice()[i];
+    pub fn center(&self) -> (f32,f32,f32) {
+        return (
+            (self.maxx + self.minx) / 2.0,
+            (self.maxy + self.miny) / 2.0,
+            (self.maxz + self.minz) / 2.0,
+        );
     }
 }
 
+pub fn make_matrix(center: (f32,f32,f32)) -> Matrix4<f32> {
+    let eye = Point3::new(center.0, center.1, center.2 + 50.0);
+    let target = Point3::new(center.0, center.1, center.2);
+    let view = Matrix4::look_at(eye, target, Vector3::unit_y());
+    // A perspective projection.
+    let projection = cgmath::perspective(
+        cgmath::Rad(3.14 / 2.0), 16.0 / 9.0,1.0, 1000.0);
+    //let model = Matrix4::<f32>::diagonal();
+    let model_view = view;
+    return projection * model_view;
+}
+
+fn apply_matrix(matrix: &Matrix4<f32>, transf: &mut Transform) {
+//    for i in 0..16 {
+//        let c = i / 4;
+//        let l = i % 4;
+//        transf.transform[l][c] = matrix.as_slice()[i];
+//    }
+    for y in 0..4 {
+        transf.transform[0][y] = matrix.x[y];
+        transf.transform[1][y] = matrix.y[y];
+        transf.transform[2][y] = matrix.z[y];
+        transf.transform[3][y] = matrix.w[y];
+    }
+}
+
+fn init_log() -> env_logger::Builder{
+    use std::env;
+    use std::io::Write;
+    if let Err(_) = env::var("RUST_LOG") {
+        env::set_var("RUST_LOG", "info");
+    }
+    env::set_var("RUST_BACKTRACE", "1");
+    let mut builder = env_logger::Builder::from_default_env();
+    builder
+        .format(|buf, record| {
+            let dt = Local::now();
+            let mut style = buf.style();
+            if record.level() <= Level::Error {
+                style.set_color(env_logger::Color::Red);
+            } else {
+                style.set_color(env_logger::Color::Green);
+            }
+            writeln!(
+                buf,
+                "{}: {} - {}",
+                style.value(record.level()),
+                dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+                record.args()
+            )
+        })
+        .filter(None, LevelFilter::Info)
+        .init();
+    builder
+}
+
+fn init_matches() -> clap::ArgMatches<'static>{
+    App::new("LasViewer")
+        .version("1.0")
+        .author("fanvanzh")
+        .about("very simple tool to view las data")
+        .arg(
+            Arg::with_name("input")
+                .short("i")
+                .value_name("FILE")
+                .help("the input file")
+                .required(true)
+                .takes_value(true)
+        )
+        .get_matches()
+}
+
 pub fn main() {
+    init_log();
+    let matches = init_matches();
+    let input = matches.value_of("input").unwrap();
+    let in_path = std::path::Path::new(input);
+    if !in_path.exists() {
+        error!("{} does not exists.", input);
+        return;
+    }
+    let mut point_cloud: Vec<Vertex> = Vec::new();
+    let mut reader = Reader::from_path(input).unwrap();
+    for wrapped_point in reader.points()
+    {
+        let point = wrapped_point.unwrap();
+        if let Some(color) = point.color {
+            point_cloud.push( Vertex{
+                pos: [point.x as f32, point.y as f32, point.z as f32],
+                color: [color.red as f32 / 65535.0, color.green as f32 / 65535.0, color.blue as f32 / 65535.0]
+            });
+        }
+    }
+    if point_cloud.len() == 0 {
+        error!("no data read");
+        return;
+    }
+    //TODO:: add a Loading Animation
     let mut events_loop = glutin::EventsLoop::new();
     let windowbuilder = glutin::WindowBuilder::new()
         .with_title("LasViewer".to_string())
@@ -150,28 +234,12 @@ pub fn main() {
         pipe::new()
         ).unwrap();
     let mut encoder: gfx::Encoder<_, _> = factory.create_command_buffer().into();
-    let mut point_cloud: Vec<Vertex> = Vec::new();
-    let mut reader = Reader::from_path(r#"E:\Data\Tile_1\Tile_1.las"#).unwrap();    
-    for wrapped_point in reader.points()
-        .take(102400 * 3)
-    {
-        let point = wrapped_point.unwrap();
-        if let Some(color) = point.color {
-            point_cloud.push( Vertex{ 
-                pos: [point.x as f32, point.y as f32, point.z as f32],
-                color: [color.red as f32 / 65535.0, color.green as f32 / 65535.0, color.blue as f32 / 65535.0]
-            });
-        }
-    }
+
     let mut bbox = Bbox::new(point_cloud[0].pos[0],point_cloud[0].pos[1],point_cloud[0].pos[2]);
     for pt in point_cloud.iter() {
         bbox.extend(pt.pos[0],pt.pos[1],pt.pos[2])
     }
-    let matrix = make_matrix( 
-        (bbox.minx + bbox.maxx) / 2.0  + 30.0, 
-        (bbox.miny + bbox.maxy) / 2.0, 
-        (bbox.minz + bbox.maxz) / 2.0
-        );
+    let matrix = make_matrix( bbox.center());
     //Identity Matrix
     let mut transf = Transform { transform: [[0.0;4],[0.0;4],[0.0;4],[0.0;4]] };
     apply_matrix(&matrix, &mut transf);

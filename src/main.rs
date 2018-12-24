@@ -110,28 +110,22 @@ impl Bbox {
 }
 
 pub fn make_matrix(center: (f32,f32,f32)) -> Matrix4<f32> {
+    use cgmath::One;
     let eye = Point3::new(center.0, center.1, center.2 + 50.0);
     let target = Point3::new(center.0, center.1, center.2);
     let view = Matrix4::look_at(eye, target, Vector3::unit_y());
     // A perspective projection.
-    let projection = cgmath::perspective(
-        cgmath::Rad(3.14 / 2.0), 16.0 / 9.0,1.0, 1000.0);
-    //let model = Matrix4::<f32>::diagonal();
-    let model_view = view;
-    return projection * model_view;
+    let projection = cgmath::perspective(cgmath::Rad(3.14 / 2.0), 16.0/9.0, 1.0, 1000.0);
+    let model = Matrix4::<f32>::one();
+    return projection * view * model;
 }
 
 fn apply_matrix(matrix: &Matrix4<f32>, transf: &mut Transform) {
-//    for i in 0..16 {
-//        let c = i / 4;
-//        let l = i % 4;
-//        transf.transform[l][c] = matrix.as_slice()[i];
-//    }
     for y in 0..4 {
-        transf.transform[0][y] = matrix.x[y];
-        transf.transform[1][y] = matrix.y[y];
-        transf.transform[2][y] = matrix.z[y];
-        transf.transform[3][y] = matrix.w[y];
+        transf.transform[y][0] = matrix.x[y];
+        transf.transform[y][1] = matrix.y[y];
+        transf.transform[y][2] = matrix.z[y];
+        transf.transform[y][3] = matrix.w[y];
     }
 }
 
@@ -192,8 +186,7 @@ pub fn main() {
     }
     let mut point_cloud: Vec<Vertex> = Vec::new();
     let mut reader = Reader::from_path(input).unwrap();
-    for wrapped_point in reader.points()
-    {
+    for wrapped_point in reader.points() {
         let point = wrapped_point.unwrap();
         if let Some(color) = point.color {
             point_cloud.push( Vertex{
@@ -205,6 +198,8 @@ pub fn main() {
     if point_cloud.len() == 0 {
         error!("no data read");
         return;
+    } else {
+        info!("{} point have read", point_cloud.len());
     }
     //TODO:: add a Loading Animation
     let mut events_loop = glutin::EventsLoop::new();

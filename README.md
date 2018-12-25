@@ -17,3 +17,9 @@ a simple tool for las data view
 **OPTIONS:**
 
     -i <FILE>        the input file
+    
+    
+
+**ScreenShot：**
+
+![效果图](https://github.com/fanvanzh/LasViewer/blob/master/LasViewer.jpg)
